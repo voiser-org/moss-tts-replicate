@@ -1,0 +1,24 @@
+build:
+  gpu: true
+  cuda: "12.1"
+  python_version: "3.12"
+  system_packages:
+    - "ffmpeg"
+    - "git"
+  python_packages:
+    - "torch==2.5.1"
+    - "torchaudio==2.5.1"
+    - "transformers"
+    - "accelerate"
+    - "sentencepiece"
+    - "numpy"
+    - "einops"
+    - "vector-quantize-pytorch"
+    - "huggingface_hub[hf_transfer]"
+    # Not: Model ağırlıkları (weights), Docker imajını şişirmemek adına
+    # predict.py içindeki setup() fonksiyonunda runtime sırasında indirilir.
+  run:
+    # torch kurulduktan sonra flash-attn'nin özel olarak derlenmesi gerekir
+    - "pip install flash-attn --no-build-isolation"
+
+predict: "predict.py:Predictor"

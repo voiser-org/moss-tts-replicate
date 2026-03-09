@@ -1,0 +1,25 @@
+# Replicate / Cog Dosyları
+.cog/
+
+# İndirilen Model Ağırlıkları
+moss_model_cache/
+moss_audio_tokenizer_cache/
+
+# Python Artıkları
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Ortam Değişkenleri ve Gizli Dosyalar
+.env
+.env.*
+
+# İşletim Sistemi Dosyları
+.DS_Store
+
+# IDE ve Editör Ayarları
+.vscode/
+.idea/
