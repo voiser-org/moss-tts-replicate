@@ -1,0 +1,42 @@
+name: Push Llama Backend to Replicate
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "llama_backend/predict.py"
+      - "llama_backend/cog.yaml"
+      - "llama_backend/configs/**"
+  workflow_dispatch:
+
+jobs:
+  push_to_replicate:
+    name: Push to Replicate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Cog
+        uses: replicate/setup-cog@v2
+        with:
+          token: ${{ secrets.REPLICATE_API_TOKEN }}
+
+      - name: Push to Replicate
+        # !! DİKKAT: Buradaki r8.im/voiser-ai/model-adi kısmını kendi yeni model adınıza göre güncelleyin.
+        # Örneğin: r8.im/voiser-ai/moss-tts-fast
+        run: |
+          cd llama_backend
+          cog push r8.im/voiser-ai/moss-tts-llama

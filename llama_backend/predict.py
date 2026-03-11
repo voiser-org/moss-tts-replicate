@@ -65,11 +65,35 @@ class Predictor(BasePredictor):
         else:
             print("MOSS-Audio-Tokenizer-ONNX diskte mevcut, atlandı.")
 
+        # 2.5. TensorRT Motorlarını Derle (Maksimum Hız İçin)
+        # TensorRT motorları çalıştırılacak karta (örn: L40S) özel olmaları için
+        # build aşamasında değil, setup() aşamasında karta ilk binişte derlenir.
+        self.trt_dir = os.path.join(self.weights_dir, "MOSS-Audio-Tokenizer-TRT")
+        if not os.path.exists(self.trt_dir) or not os.listdir(self.trt_dir):
+            print("⚡ TensorRT Motorları Derleniyor... (Bu işlem ilk açılışta kartınıza göre 1-5 dakika sürebilir)")
+            os.makedirs(self.trt_dir, exist_ok=True)
+            encoder_onnx = os.path.join(self.onnx_dir, "encoder.onnx")
+            decoder_onnx = os.path.join(self.onnx_dir, "decoder.onnx")
+            
+            # build_engine.sh scriptini çalıştırıyoruz
+            build_cmd = [
+                "bash", 
+                "/src/MOSS-TTS/moss_audio_tokenizer/trt/build_engine.sh",
+                encoder_onnx,
+                decoder_onnx,
+                self.trt_dir
+            ]
+            try:
+                subprocess.run(build_cmd, check=True)
+                print("⚡ TensorRT motorları başarıyla GPU'nuza özel derlendi!")
+            except subprocess.CalledProcessError as e:
+                print(f"TensorRT derleme hatası yakalandı. Eğer çalışmazsa lütfen logları kontrol edin: {e}")
+                raise
+        else:
+            print("TensorRT motorları zaten GPU için hazır, atlandı.")
+
         # 3. Ayar Dosyasının Dinamik Güncellenmesi
-        # default.yaml içinde model yolları belirtilmiyor, pipeline'a kod üzerinden vermeliyiz.
-        # veya PipelineConfig içine inject etmeliyiz.
-        
-        config_path = "./configs/llama_cpp/default.yaml"
+        config_path = "./configs/llama_cpp/trt.yaml"
         self.config = PipelineConfig.from_yaml(config_path)
         
         # Yolları manuel olarak konfigürasyona enjekte ediyoruz çünkü default YAML'da olmayabilir.

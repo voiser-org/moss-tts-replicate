@@ -1,8 +1,0 @@
-heads_backend: numpy
-audio_backend: onnx
-low_memory: false
-kv_cache_type_k: f16
-kv_cache_type_v: f16
-flash_attn: auto
-n_gpu_layers: -1
-n_ctx: 4096
