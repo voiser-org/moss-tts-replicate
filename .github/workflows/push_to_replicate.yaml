@@ -5,8 +5,9 @@ on:
     branches:
       - main
     paths:
-      - "predict.py"
-      - "cog.yaml"
+      - "llama_backend/predict.py"
+      - "llama_backend/cog.yaml"
+      - "llama_backend/configs/**"
   workflow_dispatch:
 
 jobs:
@@ -39,7 +40,7 @@ jobs:
           token: ${{ secrets.REPLICATE_API_TOKEN }}
 
       # 4. Modeli derle ve Replicate'e yükle (Push)
-      # Not: Model ağırlıkları Docker imajına gömülmez, sadece kod ve bağımlılıklar paketlenir.
-      # Ağırlıklar çalışma zamanında (runtime) otomatik indirilir.
       - name: Push to Replicate
-        run: cog push r8.im/voiser-ai/mdx23
+        run: |
+          cd llama_backend
+          cog push r8.im/voiser-ai/moss-tts-llama

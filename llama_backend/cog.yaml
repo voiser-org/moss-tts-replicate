@@ -1,0 +1,28 @@
+build:
+  gpu: true
+  cuda: "12.1"
+  python_version: "3.12"
+  system_packages:
+    - "ffmpeg"
+    - "git"
+    - "cmake"
+    - "build-essential"
+  python_packages:
+    - "torch==2.5.1"
+    - "torchaudio==2.5.1"
+    - "numpy"
+    - "huggingface_hub[hf_transfer]"
+    - "onnxruntime-gpu"
+    - "tokenizers"
+    - "soundfile"
+  run:
+    # 1. Clone the main MOSS-TTS repository (needed for the python package and scripts)
+    - "git clone https://github.com/OpenMOSS/MOSS-TTS.git /src/MOSS-TTS"
+    # 2. Clone llama.cpp and compile it with shared library support
+    - "cd /src/MOSS-TTS && git clone https://github.com/ggerganov/llama.cpp && cd llama.cpp && cmake -B build && cmake --build build --config Release -j"
+    # 3. Build the C bridge shared library required by moss_tts_delay
+    - "cd /src/MOSS-TTS/moss_tts_delay/llama_cpp && bash build_bridge.sh /src/MOSS-TTS/llama.cpp"
+    # 4. Install the MOSS-TTS package with the llama-cpp-onnx extra
+    - "cd /src/MOSS-TTS && pip install -e '.[llama-cpp-onnx]'"
+
+predict: "predict.py:Predictor"
