@@ -10,38 +10,90 @@ import soundfile as sf
 
 # LlamaCppPipeline imports
 import sys
+import requests
+import fnmatch
 # Ensure the cloned repo is in the path
 sys.path.append("/src/MOSS-TTS")
 from moss_tts_delay.llama_cpp import LlamaCppPipeline, PipelineConfig
 
+def _download_with_requests(url, filepath, idx, total, filename):
+    """Yedek indirme yöntemi: requests kütüphanesi."""
+    for attempt in range(3):
+        try:
+            with requests.get(url, stream=True, timeout=600, allow_redirects=True) as r:
+                r.raise_for_status()
+                downloaded = 0
+                with open(filepath, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 1024):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                mb = downloaded / (1024 * 1024)
+                print(f"  [{idx}/{total}] ✓ {filename} ({mb:.1f} MB)")
+            break
+        except Exception as e:
+            print(f"  [{idx}/{total}] Deneme {attempt+1}/3 başarısız: {e}")
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            if attempt < 2:
+                time.sleep(5 * (attempt + 1))
+            else:
+                raise
+
 def download_hf_model(repo_id, local_dir, allow_patterns=None):
-    """HuggingFace modelini pget (hızlı) veya huggingface-cli (yedek) ile indir."""
-    print(f"[{repo_id}] İndiriliyor -> {local_dir}")
+    """HuggingFace modelini pget (hızlı) veya requests (yedek) ile indir."""
+    api_url = f"https://huggingface.co/api/models/{repo_id}"
+    print(f"[{repo_id}] Dosya listesi alınıyor: {api_url}")
+    
+    resp = requests.get(api_url, timeout=30)
+    resp.raise_for_status()
+    
+    files = [s["rfilename"] for s in resp.json().get("siblings", [])]
+    
+    if allow_patterns:
+        filtered_files = []
+        for f in files:
+            for p in allow_patterns:
+                if fnmatch.fnmatch(f, p):
+                    filtered_files.append(f)
+                    break
+        files = filtered_files
+        
+    print(f"[{repo_id}] Toplam {len(files)} dosya indirilecek -> {local_dir}")
     os.makedirs(local_dir, exist_ok=True)
     
-    # HF-Transfer'ı huggingface-cli için aktif edelim
-    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+    has_pget = subprocess.run(["which", "pget"], capture_output=True).returncode == 0
+    if has_pget:
+        print("  ⚡ pget bulundu! Paralel hızlı indirme aktif.")
+    else:
+        print("  ℹ️ pget bulunamadı, requests ile indiriliyor.")
     
-    cmd = [
-        "huggingface-cli", 
-        "download", 
-        repo_id, 
-        "--local-dir", 
-        local_dir,
-        "--local-dir-use-symlinks",
-        "False"
-    ]
-    if allow_patterns:
-        for p in allow_patterns:
-            cmd.extend(["--include", p])
+    for i, filename in enumerate(files, 1):
+        filepath = os.path.join(local_dir, filename)
+        file_dir = os.path.dirname(filepath)
+        if file_dir:
+            os.makedirs(file_dir, exist_ok=True)
             
-    # wget/pget yerine HuggingFace CLI kullanmak bu depo tipleri (klasörlü) için daha garantilidir.
-    try:
-        subprocess.run(cmd, check=True)
-        print(f"[{repo_id}] Başarıyla indirildi!")
-    except subprocess.CalledProcessError as e:
-        print(f"İndirme hatası: {e}")
-        raise
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            print(f"  [{i}/{len(files)}] {filename} - zaten mevcut, atlandı.")
+            continue
+            
+        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+        print(f"  [{i}/{len(files)}] İndiriliyor: {filename}...")
+        
+        if has_pget:
+            try:
+                subprocess.run(["pget", url, filepath, "-f"], check=True, timeout=600)
+                size_mb = os.path.getsize(filepath) / (1024 * 1024)
+                print(f"  [{i}/{len(files)}] ✓ {filename} ({size_mb:.1f} MB)")
+            except Exception as e:
+                print(f"  [{i}/{len(files)}] pget başarısız, requests'e düşülüyor: {e}")
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+            _download_with_requests(url, filepath, i, len(files), filename)
+        else:
+            _download_with_requests(url, filepath, i, len(files), filename)
+            
+    print(f"[{repo_id}] Tüm dosyalar başarıyla indirildi.")
 
 class Predictor(BasePredictor):
     def setup(self):
