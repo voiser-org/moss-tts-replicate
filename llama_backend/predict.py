@@ -14,7 +14,7 @@ import sys
 sys.path.append("/src/MOSS-TTS")
 from moss_tts_delay.llama_cpp import LlamaCppPipeline, PipelineConfig
 
-def download_hf_model(repo_id, local_dir):
+def download_hf_model(repo_id, local_dir, allow_patterns=None):
     """HuggingFace modelini pget (hızlı) veya huggingface-cli (yedek) ile indir."""
     print(f"[{repo_id}] İndiriliyor -> {local_dir}")
     os.makedirs(local_dir, exist_ok=True)
@@ -22,20 +22,22 @@ def download_hf_model(repo_id, local_dir):
     # HF-Transfer'ı huggingface-cli için aktif edelim
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
     
+    cmd = [
+        "huggingface-cli", 
+        "download", 
+        repo_id, 
+        "--local-dir", 
+        local_dir,
+        "--local-dir-use-symlinks",
+        "False"
+    ]
+    if allow_patterns:
+        for p in allow_patterns:
+            cmd.extend(["--include", p])
+            
     # wget/pget yerine HuggingFace CLI kullanmak bu depo tipleri (klasörlü) için daha garantilidir.
     try:
-        subprocess.run(
-            [
-                "huggingface-cli", 
-                "download", 
-                repo_id, 
-                "--local-dir", 
-                local_dir,
-                "--local-dir-use-symlinks",
-                "False"
-            ],
-            check=True
-        )
+        subprocess.run(cmd, check=True)
         print(f"[{repo_id}] Başarıyla indirildi!")
     except subprocess.CalledProcessError as e:
         print(f"İndirme hatası: {e}")
@@ -55,7 +57,13 @@ class Predictor(BasePredictor):
         
         # 1. GGUF (Backbone, Embeddings, LM Heads) İndir
         if not os.path.exists(self.gguf_dir) or not os.listdir(self.gguf_dir):
-            download_hf_model("OpenMOSS-Team/MOSS-TTS-GGUF", self.gguf_dir)
+            patterns = [
+                "MOSS_TTS_Q4_K_M.gguf",
+                "embeddings/*",
+                "lm_heads/*",
+                "tokenizer/*"
+            ]
+            download_hf_model("OpenMOSS-Team/MOSS-TTS-GGUF", self.gguf_dir, allow_patterns=patterns)
         else:
             print("MOSS-TTS-GGUF diskte mevcut, atlandı.")
             
