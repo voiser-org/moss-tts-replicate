@@ -135,6 +135,18 @@ class Predictor(BasePredictor):
             encoder_onnx = os.path.join(self.onnx_dir, "encoder.onnx")
             decoder_onnx = os.path.join(self.onnx_dir, "decoder.onnx")
             
+            # trtexec tensorrt pip paketi ile kurulduğunda $PATH'te eksik olur
+            import site
+            site_packages_dir = site.getsitepackages()[0]
+            trt_bin_path = os.path.join(site_packages_dir, "tensorrt_bindings", "bin")
+            if not os.path.exists(trt_bin_path):
+                trt_bin_path = os.path.join(site_packages_dir, "tensorrt", "bin")
+                
+            env = os.environ.copy()
+            if os.path.exists(trt_bin_path):
+                env["PATH"] = trt_bin_path + os.pathsep + env.get("PATH", "")
+                print(f"TensorRT bin yolu eklendi: {trt_bin_path}")
+            
             # build_engine.sh scriptini çalıştırıyoruz
             build_cmd = [
                 "bash", 
@@ -144,7 +156,7 @@ class Predictor(BasePredictor):
                 self.trt_dir
             ]
             try:
-                subprocess.run(build_cmd, check=True)
+                subprocess.run(build_cmd, env=env, check=True)
                 print("⚡ TensorRT motorları başarıyla GPU'nuza özel derlendi!")
             except subprocess.CalledProcessError as e:
                 print(f"TensorRT derleme hatası yakalandı. Eğer çalışmazsa lütfen logları kontrol edin: {e}")
