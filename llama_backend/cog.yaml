@@ -19,7 +19,7 @@ build:
     - "cuda-python"
   run:
     # 1. Clone the main MOSS-TTS repository (needed for the python package and scripts)
-    - "git clone https://github.com/OpenMOSS/MOSS-TTS.git /src/MOSS-TTS"
+    - "git clone --recursive https://github.com/OpenMOSS/MOSS-TTS.git /src/MOSS-TTS"
     # 2. Clone llama.cpp and compile it. Using -j 2 instead of -j to prevent OOM on Github Actions (out of memory)
     - "cd /src/MOSS-TTS && git clone https://github.com/ggerganov/llama.cpp && cd llama.cpp && cmake -B build && cmake --build build --config Release -j 2"
     # 3. Build the C bridge shared library required by moss_tts_delay
