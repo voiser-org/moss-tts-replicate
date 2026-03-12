@@ -1,4 +1,4 @@
-name: Push to Replicate
+name: Push Llama Backend to Replicate
 
 on:
   push:
@@ -15,8 +15,6 @@ jobs:
     name: Push to Replicate
     runs-on: ubuntu-latest
     steps:
-      # 1. Disk alanını temizle
-      # Docker imajı inşası için GitHub Actions sunucusunda yer açılır.
       - name: Free disk space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
@@ -28,19 +26,17 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      # 2. Kaynak kodları çek
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 3. Cog aracını kur
-      # GitHub Repository Secrets kısmına eklenen REPLICATE_API_TOKEN kullanılır.
       - name: Setup Cog
         uses: replicate/setup-cog@v2
         with:
           token: ${{ secrets.REPLICATE_API_TOKEN }}
 
-      # 4. Modeli derle ve Replicate'e yükle (Push)
       - name: Push to Replicate
+        # !! DİKKAT: Buradaki r8.im/voiser-ai/model-adi kısmını kendi yeni model adınıza göre güncelleyin.
+        # Örneğin: r8.im/voiser-ai/moss-tts-fast
         run: |
           cd llama_backend
           cog push r8.im/voiser-ai/moss-tts-llama

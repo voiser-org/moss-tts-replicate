@@ -132,31 +132,16 @@ class Predictor(BasePredictor):
         if not os.path.exists(self.trt_dir) or not os.listdir(self.trt_dir):
             print("⚡ TensorRT Motorları Derleniyor... (Bu işlem ilk açılışta kartınıza göre 1-5 dakika sürebilir)")
             os.makedirs(self.trt_dir, exist_ok=True)
+            
             encoder_onnx = os.path.join(self.onnx_dir, "encoder.onnx")
             decoder_onnx = os.path.join(self.onnx_dir, "decoder.onnx")
             
             # trtexec tensorrt pip paketi ile kurulduğunda $PATH'te eksik olur
-            import site
-            site_packages_dir = site.getsitepackages()[0]
-            trt_bin_path = os.path.join(site_packages_dir, "tensorrt_bindings", "bin")
-            if not os.path.exists(trt_bin_path):
-                trt_bin_path = os.path.join(site_packages_dir, "tensorrt", "bin")
-                
-            env = os.environ.copy()
-            if os.path.exists(trt_bin_path):
-                env["PATH"] = trt_bin_path + os.pathsep + env.get("PATH", "")
-                print(f"TensorRT bin yolu eklendi: {trt_bin_path}")
+            # Replicate (cog) ortamında tam yerini bulmak için bash tespiti yapıyoruz
+            build_cmd = f"export PATH=$(dirname $(find /root -name trtexec 2>/dev/null | head -n 1)):$PATH && bash /src/MOSS-TTS/moss_audio_tokenizer/trt/build_engine.sh {encoder_onnx} {decoder_onnx} {self.trt_dir}"
             
-            # build_engine.sh scriptini çalıştırıyoruz
-            build_cmd = [
-                "bash", 
-                "/src/MOSS-TTS/moss_audio_tokenizer/trt/build_engine.sh",
-                encoder_onnx,
-                decoder_onnx,
-                self.trt_dir
-            ]
             try:
-                subprocess.run(build_cmd, env=env, check=True)
+                subprocess.run(build_cmd, shell=True, check=True)
                 print("⚡ TensorRT motorları başarıyla GPU'nuza özel derlendi!")
             except subprocess.CalledProcessError as e:
                 print(f"TensorRT derleme hatası yakalandı. Eğer çalışmazsa lütfen logları kontrol edin: {e}")
