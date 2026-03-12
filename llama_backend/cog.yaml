@@ -17,6 +17,8 @@ build:
     - "soundfile"
     - "tensorrt"
     - "cuda-python"
+    - "pydantic<2"
+    - "fastapi<0.99.0"
   run:
     # 1. Clone the main MOSS-TTS repository (needed for the python package and scripts)
     - "git clone --recursive https://github.com/OpenMOSS/MOSS-TTS.git /src/MOSS-TTS"
@@ -26,5 +28,7 @@ build:
     - "cd /src/MOSS-TTS/moss_tts_delay/llama_cpp && bash build_bridge.sh /src/MOSS-TTS/llama.cpp"
     # 4. Install the MOSS-TTS package with the TRT and Torch extra
     - "cd /src/MOSS-TTS && pip install -e '.[llama-cpp-trt,llama-cpp-torch]'"
+    # 5. Force Pydantic and FastAPI downgrades because moss-tts dependencies might have upgraded them
+    - "pip install 'pydantic<2' 'fastapi<0.99.0'"
 
 predict: "predict.py:Predictor"
