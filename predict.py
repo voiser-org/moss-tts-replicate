@@ -22,9 +22,9 @@ def download_hf_model(repo_id, local_dir):
     
     all_files = [s["rfilename"] for s in resp.json().get("siblings", [])]
     
-    # Teknik olarak gerekmeyen dosyaları filtrele (Resimler, README, .gitattributes vb.)
-    exclude_extensions = {".png", ".jpg", ".jpeg", ".md", ".gitattributes", ".jinja", ".txt"}
-    critical_files = {"merges.txt", "vocab.json", "tokenizer.json", "added_tokens.json"}
+    # Teknik olarak gerekmeyen dosyaları filtrele (Sadece resimler ve dokümanlar)
+    exclude_extensions = {".png", ".jpg", ".jpeg", ".md", ".gitattributes"}
+    critical_files = {"merges.txt", "vocab.json", "tokenizer.json", "added_tokens.json", "chat_template.jinja"}
     
     files_to_download = []
     for f in all_files:
@@ -55,8 +55,8 @@ def download_hf_model(repo_id, local_dir):
         
         print(f"  ⚡ Pget Manifest ile indirme başlatılıyor...")
         try:
-            # Replicate'in pget aracı manifest dosyasını kullanarak tüm dosyaları paralel indirir
-            subprocess.run(["pget", "multidownload", manifest_path], check=True)
+            # Doğru pget manifest komutu: pget -m <manifest_path>
+            subprocess.run(["pget", "-m", manifest_path], check=True)
             print(f"  ✓ Tüm dosyalar başarıyla indirildi.")
             return
         except Exception as e:
