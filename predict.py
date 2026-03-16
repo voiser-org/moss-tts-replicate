@@ -10,78 +10,87 @@ from cog import BasePredictor, Input, Path
 from transformers import AutoModel, AutoProcessor
 
 
+import concurrent.futures
+
 def download_hf_model(repo_id, local_dir):
-    """HuggingFace modelini pget (hızlı) veya requests (yedek) ile indir."""
+    """HuggingFace modelini Pget Manifest kullanarak en hızlı şekilde indir."""
     api_url = f"https://huggingface.co/api/models/{repo_id}"
     
     print(f"  Dosya listesi alınıyor: {api_url}")
     resp = requests.get(api_url, timeout=30)
     resp.raise_for_status()
     
-    files = [s["rfilename"] for s in resp.json().get("siblings", [])]
-    print(f"  Toplam {len(files)} dosya bulundu.")
+    all_files = [s["rfilename"] for s in resp.json().get("siblings", [])]
     
+    # Teknik olarak gerekmeyen dosyaları filtrele (Resimler, README, .gitattributes vb.)
+    exclude_extensions = {".png", ".jpg", ".jpeg", ".md", ".gitattributes", ".jinja", ".txt"}
+    critical_files = {"merges.txt", "vocab.json", "tokenizer.json", "added_tokens.json"}
+    
+    files_to_download = []
+    for f in all_files:
+        name_lower = f.lower()
+        ext = os.path.splitext(name_lower)[1]
+        if f in critical_files:
+            files_to_download.append(f)
+        elif ext in exclude_extensions:
+            continue
+        elif "images/" in name_lower or "test" in name_lower:
+            continue
+        else:
+            files_to_download.append(f)
+
+    print(f"  Toplam {len(all_files)} dosyadan {len(files_to_download)} tanesi seçildi.")
     os.makedirs(local_dir, exist_ok=True)
     
     has_pget = subprocess.run(["which", "pget"], capture_output=True).returncode == 0
-    if has_pget:
-        print("  ⚡ pget bulundu! Paralel hızlı indirme aktif.")
-    else:
-        print("  ℹ️ pget bulunamadı, requests ile indiriliyor (lokal geliştirme modu).")
     
-    for i, filename in enumerate(files, 1):
+    if has_pget:
+        # Pget Manifest dosyası oluştur
+        manifest_path = os.path.join("/tmp", f"manifest_{uuid.uuid4().hex}.txt")
+        with open(manifest_path, "w") as f:
+            for filename in files_to_download:
+                filepath = os.path.abspath(os.path.join(local_dir, filename))
+                url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+                f.write(f"{url} {filepath}\n")
+        
+        print(f"  ⚡ Pget Manifest ile indirme başlatılıyor...")
+        try:
+            # Replicate'in pget aracı manifest dosyasını kullanarak tüm dosyaları paralel indirir
+            subprocess.run(["pget", "multidownload", manifest_path], check=True)
+            print(f"  ✓ Tüm dosyalar başarıyla indirildi.")
+            return
+        except Exception as e:
+            print(f"  ⚠️ Pget Manifest başarısız oldu, ThreadPool fallback'e geçiliyor: {e}")
+        finally:
+            if os.path.exists(manifest_path):
+                os.remove(manifest_path)
+
+    # Fallback: ThreadPool ile paralel indirme (Pget yoksa veya hata verdiyse)
+    print(f"  ℹ️ ThreadPoolExecutor ile paralel indirme (max_workers=10)...")
+    def _download_task(filename):
         filepath = os.path.join(local_dir, filename)
-        
-        file_dir = os.path.dirname(filepath)
-        if file_dir:
-            os.makedirs(file_dir, exist_ok=True)
-        
         if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-            print(f"  [{i}/{len(files)}] {filename} - zaten mevcut, atlandı.")
-            continue
-        
+            return
         url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
-        print(f"  [{i}/{len(files)}] İndiriliyor: {filename}...")
-        
-        if has_pget:
-            # pget ile paralel indirme (Replicate sunucusunda 5-10x hızlı)
-            try:
-                subprocess.run(
-                    ["pget", url, filepath, "-f"],
-                    check=True,
-                    timeout=600
-                )
-                size_mb = os.path.getsize(filepath) / (1024 * 1024)
-                print(f"  [{i}/{len(files)}] ✓ {filename} ({size_mb:.1f} MB)")
-            except Exception as e:
-                print(f"  [{i}/{len(files)}] pget başarısız, requests'e düşülüyor: {e}")
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                _download_with_requests(url, filepath, i, len(files), filename)
-        else:
-            _download_with_requests(url, filepath, i, len(files), filename)
+        _download_with_requests(url, filepath, 0, 0, filename)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        list(executor.map(_download_task, files_to_download))
 
 
 def _download_with_requests(url, filepath, idx, total, filename):
-    """Yedek indirme yöntemi: requests kütüphanesi."""
+    """Yedek veya küçük dosya indirme yöntemi."""
     for attempt in range(3):
         try:
-            with requests.get(url, stream=True, timeout=600, allow_redirects=True) as r:
+            with requests.get(url, stream=True, timeout=300, allow_redirects=True) as r:
                 r.raise_for_status()
-                downloaded = 0
                 with open(filepath, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
                         f.write(chunk)
-                        downloaded += len(chunk)
-                mb = downloaded / (1024 * 1024)
-                print(f"  [{idx}/{total}] ✓ {filename} ({mb:.1f} MB)")
             break
         except Exception as e:
-            print(f"  [{idx}/{total}] Deneme {attempt+1}/3 başarısız: {e}")
-            if os.path.exists(filepath):
-                os.remove(filepath)
             if attempt < 2:
-                time.sleep(5 * (attempt + 1))
+                time.sleep(2)
             else:
                 raise
 
@@ -145,6 +154,7 @@ class Predictor(BasePredictor):
             print("Transformers modül cache'i temizlendi.")
         
         # Model ve tokenizer yüklendi, ağ isteklerini tamamen kapatıyoruz.
+        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         os.environ["HF_HUB_OFFLINE"] = "1"
             
@@ -176,7 +186,7 @@ class Predictor(BasePredictor):
             self.local_dir, 
             trust_remote_code=True,
             attn_implementation=attn_implementation,
-            torch_dtype=self.dtype
+            dtype=self.dtype
         ).to(self.device)
         self.model.eval()
         print("Model ve işlemci başarıyla RAM'e yüklendi, API isteklere hazır!")
@@ -245,6 +255,16 @@ class Predictor(BasePredictor):
             ge=1,
             le=200
         ),
+        output_format: str = Input(
+            description="Çıktı ses formatı.",
+            default="mp3",
+            choices=["mp3", "wav"]
+        ),
+        sample_rate: int = Input(
+            description="Çıktı örnekleme hızı (Hz). 24000 modelin ham hızıdır, 44100 daha yüksek kalite için resample edilir.",
+            default=44100,
+            choices=[24000, 44100]
+        ),
     ) -> Path:
         """MOSS-TTS ile metinden ses üret veya ses klonla."""
         
@@ -289,10 +309,41 @@ class Predictor(BasePredictor):
         decoded = self.processor.decode(outputs)
         for message in decoded:
             if hasattr(message, 'audio_codes_list') and message.audio_codes_list:
-                audio_tensor = message.audio_codes_list[0]
-                sr = getattr(self.processor.model_config, 'sampling_rate', getattr(self.model.config, 'sampling_rate', 24000))
-                torchaudio.save(str(output_path), audio_tensor.unsqueeze(0), sr)
-                return output_path
+                audio_tensor = message.audio_codes_list[0] # [tokens] or [1, tokens]
+                if audio_tensor.ndim == 1:
+                    audio_tensor = audio_tensor.unsqueeze(0) # [1, tokens]
+                
+                model_sr = getattr(self.processor.model_config, 'sampling_rate', getattr(self.model.config, 'sampling_rate', 24000))
+                
+                # Resampling if needed
+                if sample_rate != model_sr:
+                    print(f"Resampling: {model_sr}Hz -> {sample_rate}Hz")
+                    resampler = torchaudio.transforms.Resample(model_sr, sample_rate).to(self.device)
+                    audio_tensor = resampler(audio_tensor)
+                
+                ext = output_format.lower()
+                final_path = f"/tmp/output_{uuid.uuid4().hex}.{ext}"
+                
+                if ext == "wav":
+                    torchaudio.save(final_path, audio_tensor.cpu(), sample_rate)
+                else:
+                    # MP3 conversion using ffmpeg
+                    temp_wav = f"/tmp/temp_{uuid.uuid4().hex}.wav"
+                    torchaudio.save(temp_wav, audio_tensor.cpu(), sample_rate)
+                    
+                    try:
+                        subprocess.run([
+                            "ffmpeg", "-i", temp_wav,
+                            "-codec:a", "libmp3lame",
+                            "-b:a", "192k",
+                            "-ar", str(sample_rate),
+                            final_path, "-y"
+                        ], check=True, capture_output=True)
+                    finally:
+                        if os.path.exists(temp_wav):
+                            os.remove(temp_wav)
+                
+                return Path(final_path)
                 
         raise Exception("Ses üretilemedi. Lütfen parametreleri kontrol edin.")
 
