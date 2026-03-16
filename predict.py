@@ -55,8 +55,8 @@ def download_hf_model(repo_id, local_dir):
         
         print(f"  ⚡ Pget Manifest ile indirme başlatılıyor...")
         try:
-            # Doğru pget manifest komutu: pget -m <manifest_path>
-            subprocess.run(["pget", "-m", manifest_path], check=True)
+            # Replicate üzerinde pget listesi için 'multifile' komutu kullanılır.
+            subprocess.run(["pget", "multifile", manifest_path], check=True)
             print(f"  ✓ Tüm dosyalar başarıyla indirildi.")
             return
         except Exception as e:
@@ -319,6 +319,8 @@ class Predictor(BasePredictor):
                 if sample_rate != model_sr:
                     print(f"Resampling: {model_sr}Hz -> {sample_rate}Hz")
                     resampler = torchaudio.transforms.Resample(model_sr, sample_rate).to(self.device)
+                    # Tensor'u resampler ile aynı cihaza taşıyoruz (CPU/GPU uyumu için)
+                    audio_tensor = audio_tensor.to(self.device)
                     audio_tensor = resampler(audio_tensor)
                 
                 ext = output_format.lower()
