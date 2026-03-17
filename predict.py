@@ -256,11 +256,6 @@ class Predictor(BasePredictor):
             le=200
         ),
         output_format: str = Input(
-            description="Çıktı ses formatı.",
-            default="mp3",
-            choices=["mp3", "wav"]
-        ),
-        output_format: str = Input(
             description="Çıktı ses formatı. MP3 seçilirse otomatik olarak 44100Hz ve 192kbps kalitesine yükseltilir. WAV seçilirse modelin ham sesi (24000Hz) korunur.",
             default="mp3",
             choices=["mp3", "wav"]
@@ -346,8 +341,6 @@ class Predictor(BasePredictor):
                     finally:
                         if os.path.exists(temp_wav):
                             os.remove(temp_wav)
-                
-                return Path(final_path)
                 
                 return Path(final_path)
                 
