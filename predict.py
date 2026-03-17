@@ -260,10 +260,10 @@ class Predictor(BasePredictor):
             default="mp3",
             choices=["mp3", "wav"]
         ),
-        sample_rate: int = Input(
-            description="Çıktı örnekleme hızı (Hz). 24000 modelin ham hızıdır, 44100 daha yüksek kalite için resample edilir.",
-            default=44100,
-            choices=[24000, 44100]
+        output_format: str = Input(
+            description="Çıktı ses formatı. MP3 seçilirse otomatik olarak 44100Hz ve 192kbps kalitesine yükseltilir. WAV seçilirse modelin ham sesi (24000Hz) korunur.",
+            default="mp3",
+            choices=["mp3", "wav"]
         ),
     ) -> Path:
         """MOSS-TTS ile metinden ses üret veya ses klonla."""
@@ -314,36 +314,40 @@ class Predictor(BasePredictor):
                     audio_tensor = audio_tensor.unsqueeze(0) # [1, tokens]
                 
                 model_sr = getattr(self.processor.model_config, 'sampling_rate', getattr(self.model.config, 'sampling_rate', 24000))
+                ext = output_format.lower()
+                
+                # MP3 için hedef 44100Hz, WAV için modelin orijinal Hz değeri.
+                target_sr = 44100 if ext == "mp3" else model_sr
                 
                 # Resampling if needed
-                if sample_rate != model_sr:
-                    print(f"Resampling: {model_sr}Hz -> {sample_rate}Hz")
-                    resampler = torchaudio.transforms.Resample(model_sr, sample_rate).to(self.device)
-                    # Tensor'u resampler ile aynı cihaza taşıyoruz (CPU/GPU uyumu için)
+                if target_sr != model_sr:
+                    print(f"Resampling: {model_sr}Hz -> {target_sr}Hz")
+                    resampler = torchaudio.transforms.Resample(model_sr, target_sr).to(self.device)
                     audio_tensor = audio_tensor.to(self.device)
                     audio_tensor = resampler(audio_tensor)
                 
-                ext = output_format.lower()
                 final_path = f"/tmp/output_{uuid.uuid4().hex}.{ext}"
                 
                 if ext == "wav":
-                    torchaudio.save(final_path, audio_tensor.cpu(), sample_rate)
+                    torchaudio.save(final_path, audio_tensor.cpu(), target_sr)
                 else:
                     # MP3 conversion using ffmpeg
                     temp_wav = f"/tmp/temp_{uuid.uuid4().hex}.wav"
-                    torchaudio.save(temp_wav, audio_tensor.cpu(), sample_rate)
+                    torchaudio.save(temp_wav, audio_tensor.cpu(), target_sr)
                     
                     try:
                         subprocess.run([
                             "ffmpeg", "-i", temp_wav,
                             "-codec:a", "libmp3lame",
                             "-b:a", "192k",
-                            "-ar", str(sample_rate),
+                            "-ar", str(target_sr),
                             final_path, "-y"
                         ], check=True, capture_output=True)
                     finally:
                         if os.path.exists(temp_wav):
                             os.remove(temp_wav)
+                
+                return Path(final_path)
                 
                 return Path(final_path)
                 
