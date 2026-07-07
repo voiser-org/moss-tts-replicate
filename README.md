@@ -1,6 +1,6 @@
 # MOSS-TTS
 
-[[Model]](https://huggingface.co/OpenMOSS-Team/MOSS-TTS)
+[[Model]](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-v1.5)
 [[Replicate Demo]](https://replicate.com/voiser-ai/moss-tts)
 [[Resmi API]](https://studio.mosi.cn/docs/moss-tts)
 
@@ -10,23 +10,25 @@ MOSS-TTS, [OpenMOSS](https://huggingface.co/OpenMOSS-Team) tarafından geliştir
 ## Temel Özellikler
 
 - **Sıfır-atışlı ses klonlama** — 3–30 saniyelik bir referans sesten herhangi bir sesi klonlayın, ince ayar gerekmez.
-- **Çok dilli sentez** — Türkçe, İngilizce, Çince, Almanca, Fransızca, İspanyolca, Japonca, Korece dahil 20+ dil desteği.
+- **Çok dilli sentez** — Türkçe, İngilizce, Çince, Almanca, Fransızca, İspanyolca, Japonca, Korece dahil 31 dil desteği.
 - **Dil değiştirme (Code-switching)** — Tek bir cümle içinde doğal çok dilli üretim (örn. Türkçe–İngilizce karışık).
 - **Süre kontrolü** — `expected_duration_sec` parametresi ile konuşma hızını ve süresini kontrol edin.
+- **Dil etiketi** — `model_language` parametresi ile MOSS-TTS v1.5'e hedef dili açıkça iletin.
+- **Duraklama kontrolü** — Metin içinde `[pause 3.2s]` gibi etiketlerle açık duraklama isteyin.
 - **Telaffuz kontrolü** — Pinyin, IPA ve karışık girdiler ile fonem düzeyinde hassas telaffuz kontrolü.
 - **Ultra uzun üretim** — Tek seferde 1 saate kadar kesintisiz konuşma üretin.
 
 
 ## Mimari
 
-Bu deployment **MossTTSDelay-8B** modelini kullanır. Gecikme zamanlamalı (delay scheduling) çoklu kafa VQ tahmini yapan tek bir Transformer omurgasına sahiptir. Model `bfloat16` hassasiyetinde NVIDIA L40S GPU üzerinde çalışır.
+Bu deployment **MOSS-TTS v1.5 / MossTTSDelay-8B** modelini kullanır. Gecikme zamanlamalı (delay scheduling) çoklu kafa VQ tahmini yapan tek bir Transformer omurgasına sahiptir. Model `bfloat16` hassasiyetinde NVIDIA L40S GPU üzerinde çalışır.
 
 | Bileşen | Detay |
 |:-------:|:------|
-| Model | MossTTSDelay-8B |
+| Model | MOSS-TTS v1.5 / MossTTSDelay-8B |
 | Parametre Sayısı | ~8 Milyar |
 | Ağırlık Boyutu | ~16 GB (MOSS-TTS) + ~7 GB (Audio Tokenizer) |
-| Çıktı Formatı | 24 kHz WAV |
+| Çıktı Formatı | MP3 veya WAV |
 | GPU | NVIDIA L40S |
 | Hassasiyet | bfloat16 |
 
@@ -50,6 +52,7 @@ output = replicate.run(
     "voiser-ai/moss-tts",
     input={
         "text": "Merhaba, bugün hava çok güzel.",
+        "model_language": "Turkish",
         "audio_temperature": 1.7,
         "audio_top_p": 0.8,
         "audio_top_k": 25,
@@ -70,6 +73,7 @@ output = replicate.run(
     "voiser-ai/moss-tts",
     input={
         "text": "Hello, the weather is great today.",
+        "model_language": "English",
         "reference_audio": open("referans.wav", "rb"),
         "audio_temperature": 1.5,  # İngilizce için daha düşük
     }
@@ -83,7 +87,20 @@ output = replicate.run(
     "voiser-ai/moss-tts",
     input={
         "text": "Bu cümle yaklaşık beş saniye sürmeli.",
+        "model_language": "Turkish",
         "expected_duration_sec": 5.0,
+    }
+)
+```
+
+### Duraklama Kontrolü
+
+```python
+output = replicate.run(
+    "voiser-ai/moss-tts",
+    input={
+        "text": "Birinci cümle. [pause 2.0s] İkinci cümle.",
+        "model_language": "Turkish",
     }
 )
 ```
@@ -98,6 +115,7 @@ curl -s -X POST "https://api.replicate.com/v1/predictions" \
     "version": "<model_version_id>",
     "input": {
       "text": "Merhaba, bugün hava çok güzel.",
+      "model_language": "Turkish",
       "audio_temperature": 1.7,
       "audio_top_p": 0.8,
       "audio_top_k": 25
@@ -114,15 +132,18 @@ curl -s -X POST "https://api.replicate.com/v1/predictions" \
 |:----------|:---:|:----------:|:---------|
 | `reference_audio` | Dosya | — | Ses klonlama için referans ses dosyası (WAV/MP3). 3–30 saniye arası temiz konuşma önerilir. |
 | `text` | String | `"Merhaba, bugün hava çok güzel."` | Sese çevrilecek metin. Çok dilli, Pinyin ve IPA girdilerini destekler. |
+| `model_language` | String | `auto` | MOSS-TTS v1.5 dil etiketi. Dil biliniyorsa seçmek kaliteyi artırır. |
+| `text_normalization_language` | String | `none` | Düz tam sayıları seçilen dilde yazıya çeviren ön işleme katmanı. |
 | `audio_temperature` | Float | `1.7` | Ses üretimi sıcaklığı. Yüksek → daha ifadeli ama daha az kararlı. Çince: `1.7`, İngilizce: `1.5` önerilir. |
 | `audio_top_p` | Float | `0.8` | Nucleus sampling eşiği. Düşük → daha tutarlı çıktı. |
 | `audio_top_k` | Int | `25` | Top-K sampling. Her adımda değerlendirilen aday token sayısını sınırlar. |
-| `max_new_tokens` | Int | `512` | Üretilecek maksimum token sayısı. Kural: **1 saniye ≈ 12.5 token**. |
+| `max_new_tokens` | Int | `2048` | Üretilecek maksimum token sayısı. Kural: **1 saniye ≈ 12.5 token**. |
 | `expected_duration_sec` | Float | `0` | Beklenen çıktı süresi (saniye). `0` = otomatik. En iyi sonuç: doğal okuma süresinin 0.5×–1.5× aralığı. |
 | `audio_repetition_penalty` | Float | `1.0` | Tekrarlayan ses kalıplarını cezalandırır. Döngüsel ses varsa artırın. |
 | `text_temperature` | Float | `1.5` | **[Deneysel]** Metin kafası sıcaklığı. Model geliştiricilerin optimize ettiği varsayılan değerdir. |
 | `text_top_p` | Float | `1.0` | **[Deneysel]** Metin tokenları için Nucleus sampling. |
 | `text_top_k` | Int | `50` | **[Deneysel]** Metin tokenları için Top-K sampling. |
+| `output_format` | String | `mp3` | Çıktı formatı. `mp3` veya `wav`. |
 
 > **Not:** `text_*` parametreleri modelin dahili metin üretim kafasını kontrol eder ve model geliştiricilerinin önerdiği varsayılan değerlere ayarlanmıştır. Üretim davranışını deneysel olarak incelemiyorsanız değiştirmeniz önerilmez.
 
@@ -130,7 +151,7 @@ curl -s -X POST "https://api.replicate.com/v1/predictions" \
 
 | Parametre | Tip | Açıklama |
 |:----------|:---:|:---------|
-| `output` | Dosya | 24 kHz WAV formatında üretilmiş ses dosyası. |
+| `output` | Dosya | Seçilen formatta üretilmiş ses dosyası. |
 
 
 ## Nasıl Çalışır?
@@ -149,7 +170,7 @@ GitHub Push → GitHub Actions → Cog Build → Replicate
 ```
 
 1. **Derleme aşaması** — Yalnızca Python kodu ve bağımlılıklar Docker imajına paketlenir (~3 GB). Model ağırlıkları imaja **gömülmez**.
-2. **Soğuk başlatma (Cold Boot)** — İlk istekte, model ağırlıkları (~16 GB MOSS-TTS + ~7 GB Audio Tokenizer) HuggingFace'ten [`pget`](https://github.com/replicate/pget) ile paralel olarak yüksek hızda indirilir.
+2. **Soğuk başlatma (Cold Boot)** — İlk istekte, model ağırlıkları (~16 GB MOSS-TTS v1.5 + ~7 GB Audio Tokenizer) HuggingFace'ten [`pget`](https://github.com/replicate/pget) ile paralel olarak yüksek hızda indirilir.
 3. **Sıcak tahminler** — Model GPU belleğine yüklendikten sonra, sonraki istekler saniyeler içinde yanıtlanır.
 
 
@@ -213,7 +234,13 @@ Model geliştiricilerinin farklı diller için önerdiği varsayılan değerler:
 
 > **İpucu:** Varsayılan değerler çoğu senaryo için iyi çalışır. Önce varsayılanlarla başlayın, ses çeşitliliğini artırmak veya azaltmak istiyorsanız `audio_temperature` değerini ayarlayın.
 
+## MOSS-TTS v1.5 Dil Etiketleri
+
+`model_language` için desteklenen değerler:
+
+`Chinese`, `Cantonese`, `English`, `Arabic`, `Czech`, `Danish`, `Dutch`, `Finnish`, `French`, `German`, `Greek`, `Hebrew`, `Hindi`, `Hungarian`, `Italian`, `Japanese`, `Korean`, `Macedonian`, `Malay`, `Persian (Farsi)`, `Polish`, `Portuguese`, `Romanian`, `Russian`, `Spanish`, `Swahili`, `Swedish`, `Tagalog`, `Thai`, `Turkish`, `Vietnamese`.
+
 
 ## Lisans
 
-Bu proje, [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) altında yayınlanan [OpenMOSS-Team/MOSS-TTS](https://huggingface.co/OpenMOSS-Team/MOSS-TTS) modelini kullanmaktadır. Tam lisans detayları için [HuggingFace model kartını](https://huggingface.co/OpenMOSS-Team/MOSS-TTS) ziyaret edin.
+Bu proje, [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) altında yayınlanan [OpenMOSS-Team/MOSS-TTS-v1.5](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-v1.5) modelini kullanmaktadır. Tam lisans detayları için [HuggingFace model kartını](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-v1.5) ziyaret edin.

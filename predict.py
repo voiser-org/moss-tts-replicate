@@ -9,8 +9,45 @@ import importlib.util
 from cog import BasePredictor, Input, Path
 from transformers import AutoModel, AutoProcessor
 
+from text_normalization import normalize_text
 
 import concurrent.futures
+
+MODEL_LANGUAGE_CHOICES = [
+    "auto",
+    "Chinese",
+    "Cantonese",
+    "English",
+    "Arabic",
+    "Czech",
+    "Danish",
+    "Dutch",
+    "Finnish",
+    "French",
+    "German",
+    "Greek",
+    "Hebrew",
+    "Hindi",
+    "Hungarian",
+    "Italian",
+    "Japanese",
+    "Korean",
+    "Macedonian",
+    "Malay",
+    "Persian (Farsi)",
+    "Polish",
+    "Portuguese",
+    "Romanian",
+    "Russian",
+    "Spanish",
+    "Swahili",
+    "Swedish",
+    "Tagalog",
+    "Thai",
+    "Turkish",
+    "Vietnamese",
+]
+
 
 def download_hf_model(repo_id, local_dir):
     """HuggingFace modelini Pget Manifest kullanarak en hızlı şekilde indir."""
@@ -108,9 +145,9 @@ class Predictor(BasePredictor):
         torch.backends.cuda.enable_mem_efficient_sdp(True)
         torch.backends.cuda.enable_math_sdp(True)
 
-        self.model_name = "OpenMOSS-Team/MOSS-TTS"
+        self.model_name = "OpenMOSS-Team/MOSS-TTS-v1.5"
         self.audio_tokenizer_name = "OpenMOSS-Team/MOSS-Audio-Tokenizer"
-        self.local_dir = "./moss_model_cache"
+        self.local_dir = "./moss_tts_v15_model_cache"
         self.audio_tokenizer_dir = "./moss_audio_tokenizer_cache"
         
         print(f"[{self.model_name}] indirme başlatılıyor (requests/urllib3)...")
@@ -201,6 +238,16 @@ class Predictor(BasePredictor):
             description="Sese çevrilecek metin. Türkçe, İngilizce, Çince, Almanca, Fransızca, İspanyolca, Japonca, Korece ve daha birçok dili destekler. Pinyin ve IPA girdileri de kabul edilir.",
             default="Merhaba, bugün hava çok güzel."
         ),
+        model_language: str = Input(
+            description="MOSS-TTS v1.5 dil etiketi. Dil biliniyorsa seçmek kaliteyi artırır; auto seçilirse model dili kendisi çıkarır.",
+            default="auto",
+            choices=MODEL_LANGUAGE_CHOICES
+        ),
+        text_normalization_language: str = Input(
+            description="Metin ön işleme dili. Seçilen dil destekleniyorsa düz tam sayılar o dilde yazıya çevrilir. 'none' seçilirse metin aynen modele gider.",
+            default="none",
+            choices=["none", "tr", "fa", "sv", "es", "it", "de", "pt", "ja", "zh", "en", "fr", "hu", "ko", "ru", "ar", "pl", "cs", "da", "el"]
+        ),
         audio_temperature: float = Input(
             description="Ses üretimi sıcaklığı. Düşük değerler (0.5-1.0) daha monoton ve kararlı bir ses üretir. Yüksek değerler (1.5-2.0) daha doğal, duygusal ve canlı bir ses üretir ancak tutarsızlık riski artar. Çince için 1.7, İngilizce için 1.5 önerilir.",
             default=1.7,
@@ -263,6 +310,12 @@ class Predictor(BasePredictor):
     ) -> Path:
         """MOSS-TTS ile metinden ses üret veya ses klonla."""
         
+        if text_normalization_language != "none":
+            normalized_text = normalize_text(text, language=text_normalization_language)
+            if normalized_text != text:
+                print(f"Metin normalize edildi ({text_normalization_language}): {normalized_text[:80]}...")
+            text = normalized_text
+
         print(f"İşlem başlıyor... Text: {text[:50]}...")
 
         ref_path = None
@@ -275,10 +328,14 @@ class Predictor(BasePredictor):
             tokens_arg = int(expected_duration_sec * 12.5)
             print(f"Beklenen süre: {expected_duration_sec}s → {tokens_arg} token")
 
+        message_kwargs = {"text": text, "tokens": tokens_arg}
+        if model_language != "auto":
+            message_kwargs["language"] = model_language
+
         if ref_path:
-             inputs = self.processor.build_user_message(text=text, reference=ref_path, tokens=tokens_arg)
+             inputs = self.processor.build_user_message(reference=ref_path, **message_kwargs)
         else:
-             inputs = self.processor.build_user_message(text=text, tokens=tokens_arg)
+             inputs = self.processor.build_user_message(**message_kwargs)
             
         batch = self.processor([inputs], mode="generation")
         input_ids = batch["input_ids"].to(self.device)
@@ -345,4 +402,3 @@ class Predictor(BasePredictor):
                 return Path(final_path)
                 
         raise Exception("Ses üretilemedi. Lütfen parametreleri kontrol edin.")
-
